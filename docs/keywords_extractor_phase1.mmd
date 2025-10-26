@@ -1,0 +1,19 @@
+flowchart LR
+    direction LR
+    Start([Start]):::step
+    Pre["Pre-processor"]:::step
+    Extract["Keywords<br>Extractor"]:::step
+    Merge1["Keywords<br>Merger"]:::step
+    CompCheck["Comprehensive<br>Checker"]:::step
+    GateComp{Comprehensive?}:::gate
+    SuppExtract["Supplementary<br>Extractor"]:::step
+    End([End – Go Phase 2]):::step
+
+    Start --> Pre
+    Pre -- sentences --> Extract
+    Extract -- "keywords<br>(with references)" --> Merge1
+    Merge1 -- "merged<br>keywords" --> CompCheck
+    CompCheck --> GateComp
+    GateComp -- No --> SuppExtract
+    SuppExtract -- "complementary<br>keywords" --> Merge1
+    GateComp -- Yes --> End

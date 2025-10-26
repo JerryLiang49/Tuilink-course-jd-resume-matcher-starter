@@ -1,0 +1,18 @@
+flowchart LR
+    %% Nodes
+    JD[(JD)]
+    Resume[(Resume)]
+    Extractor[[Keywords Extractor]]
+    JDk[(JD Keywords)]
+    Rk[(Resume Keywords)]
+    Matcher[[Matcher]]
+    Score((Score))
+
+    %% Edges
+    JD --> Extractor
+    Resume --> Extractor
+    Extractor --> JDk
+    Extractor --> Rk
+    JDk --> Matcher
+    Rk --> Matcher
+    Matcher --> Score

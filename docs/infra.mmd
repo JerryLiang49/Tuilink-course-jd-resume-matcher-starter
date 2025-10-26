@@ -1,0 +1,38 @@
+flowchart LR
+    %% Direction: put user on the far left
+    U[User]
+
+    subgraph AWS["AWS account"]
+        R53[Amazon Route 53]
+        CF[Amazon CloudFront]
+        S3[Amazon S3]
+        APIGW[Amazon API Gateway]
+        ACM[AWS Certificate Manager]
+        L1[AWS Lambda - ingest and API handler]
+        SQS[Amazon SQS]
+        L2[AWS Lambda - worker and processor]
+        DDB[Amazon DynamoDB]
+    end
+
+    %% Static site and result delivery
+    U -->|DNS lookup | R53
+    R53 -->|Alias to distribution| CF
+    CF -->|Cached assets and results| U
+    S3 -->|Origin reads| CF
+
+    %% API entry and job creation
+    R53 -->|api dot your domain - custom domain| APIGW
+    ACM -.->|TLS cert for custom domain - HTTPS| APIGW
+
+    APIGW -->|POST jobs - invoke| L1
+    L1 -->|PutItem UpdateItem - job metadata and status| DDB
+    L1 -->|SendMessage - enqueue job| SQS
+    APIGW <-.->|GET jobs id - poll status| L1
+    L1 -.->|Query status| DDB
+    APIGW -->|202 Accepted plus job id| U
+
+    %% Async processing
+    SQS -->|Event source mapping - batches retries DLQ| L2
+    L2 -->|Write outputs and artifacts| S3
+    L2 -.->|Optional cache invalidation or signed URL generation| CF
+    L2 -->|Update status| DDB

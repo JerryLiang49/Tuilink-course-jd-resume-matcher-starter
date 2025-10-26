@@ -1,0 +1,13 @@
+flowchart LR
+    direction LR
+    Start([Start – From Phase 1]):::step
+    Validator["Validator"]:::step
+    GateValid{Valid?}:::gate
+    Modifier["Modifier"]:::step
+    End([End]):::step
+
+    Start --> Validator
+    Validator --> GateValid
+    GateValid -- No --> Modifier
+    Modifier -- "modified keywords" --> Validator
+    GateValid -- Yes --> End
