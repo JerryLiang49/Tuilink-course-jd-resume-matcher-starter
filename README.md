@@ -22,11 +22,11 @@ This project implements an extraction and matching workflow that:
 ├── utils/                     # Utility functions (LLM, cache, JSON, hash)
 ├── .env.example               # Example environment config
 ├── build.sh                   # Build script for dist/
-├── extract.ipynb              # Local notebook to play around (Phase 1 ready)
-├── quick_handler.py           # API Lambda: create jobs and query status
+├── extract.ipynb              # Local notebook to play around
+├── quick_handler.py           # Web / Quick Lambda: create jobs and query status
 ├── requirements-compact.txt   # Compact dependencies for deployment
-├── requirements.txt           # Full dependencies
-└── worker_handler.py          # Worker Lambda: SQS consumer with TODOs
+├── requirements.txt           # Full dependencies for local development
+└── worker_handler.py          # Worker Lambda: SQS consumer to process the jobs
 ```
 
 ## Setup
@@ -83,7 +83,7 @@ chmod +x ./build.sh
 - `quick_handler.py`
 - `worker_handler.py`
 - `requirements.txt` (copied from `requirements-compact.txt`)
-- `models/`, `nodes/`, `utils/` (project files only)
+- `models/`, `nodes/`, `utils/` (necessary files only)
 - `__init__.py` files in Python package directories (`models/`, `nodes/`, `utils/`)
 
 4. Deployment notes for your infra repo:
