@@ -10,7 +10,6 @@ This project implements an extraction and matching workflow that:
 2. Extracts and merges skills with sentence references (to be implemented)
 3. Validates and modifies skills for consistency (to be implemented)
 4. Computes professional matching metrics (precision, recall, F1) (to be implemented)
-5. Provides an optional async pipeline via API Gateway → SQS → Lambda → DynamoDB/S3/CloudFront (scaffolded)
 
 ## Project Structure
 
@@ -21,13 +20,13 @@ This project implements an extraction and matching workflow that:
 ├── models/                    # Core data models
 ├── nodes/                     # Processing nodes and graph builders
 ├── utils/                     # Utility functions (LLM, cache, JSON, hash)
-├── quick_handler.py           # API Lambda: create jobs and query status
-├── worker_handler.py          # Worker Lambda: SQS consumer with TODOs
-├── extract.ipynb              # Local notebook to play around (Phase 1 ready)
-├── requirements.txt           # Full dependencies
-├── requirements-compact.txt   # Compact dependencies for deployment
+├── .env.example               # Example environment config
 ├── build.sh                   # Build script for dist/
-└── .env.example               # Example environment config
+├── extract.ipynb              # Local notebook to play around (Phase 1 ready)
+├── quick_handler.py           # API Lambda: create jobs and query status
+├── requirements-compact.txt   # Compact dependencies for deployment
+├── requirements.txt           # Full dependencies
+└── worker_handler.py          # Worker Lambda: SQS consumer with TODOs
 ```
 
 ## Setup
@@ -89,7 +88,7 @@ chmod +x ./build.sh
 
 4. Deployment notes for your infra repo:
 
-- Set your Quick API Lambda source path to the `dist` folder of this repo, e.g. `../../course-jd-resume-matcher-starter/dist/`
-- Use handler `quick_handler.handler` for the API Lambda
-- Use handler `worker_handler.handler` for the Worker Lambda (SQS consumer)
-- Provide required AWS environment variables in your infra configuration
+- Set your Lambda source path to the `dist` folder of this repo, e.g., `JD_RESUME_MATCHER_LAMBDA_SOURCE_PATH=../../course-jd-resume-matcher-starter/dist/`
+- Use handler for the web / quick Lambda (triggered by API Gateway), e.g., `JD_RESUME_MATCHER_QUICK_HANDLER=quick_handler.handler`
+- Use handler for the worker Lambda (consuming SQS events), e.g., `JD_RESUME_MATCHER_WORKER_HANDLER=worker_handler.handler`
+- (Optional) Set your Lambda layer source path to the `dist` folder of this repo, e.g., `JD_RESUME_MATCHER_LAMBDA_LAYER_SOURCE_PATH=../../course-jd-resume-matcher-starter/dist/`
