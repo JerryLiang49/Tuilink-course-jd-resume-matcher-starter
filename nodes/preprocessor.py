@@ -1,3 +1,5 @@
+"""LLM-backed preprocessing node that splits documents into sentences."""
+
 import json
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -10,10 +12,21 @@ from utils.llm import (
 
 
 def preprocessor(state: ExtractorState) -> ExtractorState:
-    """Pre-process the input text into sentences."""
+    """Split one raw document into sentence chunks.
+
+    This is the first extraction step for both resumes and job descriptions.
+    The downstream skill extractor should operate on the numbered sentences
+    rather than the raw document so every skill can cite evidence.
+    """
+
     if not state.document:
         raise ValueError("Document is empty")
 
+    state.phase = "phase1"
+    state.step = "phase1:preprocessor"
+
+    # Keep the prompt narrow: the LLM is not extracting skills here, only
+    # deciding which meaningful sentence-like chunks should be retained.
     system_prompt = """
     You are a helpful assistant that splits the given text into sentences.
     Ignore meaningless sentences like title, header, footer,etc.
@@ -21,6 +34,8 @@ def preprocessor(state: ExtractorState) -> ExtractorState:
 
     user_prompt = state.document
 
+    # Force structured JSON output so parsing is deterministic. ``RawSentences``
+    # contains only a list of strings; ids are assigned locally below.
     response = invoke_llm(
         [
             SystemMessage(content=system_prompt),
@@ -37,6 +52,8 @@ def preprocessor(state: ExtractorState) -> ExtractorState:
         use_cache=LLM_USE_CACHE,
     )
 
+    # Convert the raw strings into stable Sentence objects. The generated index
+    # becomes the evidence id used by later skill datapoints.
     state.sentences = [
         Sentence(id=index, sentence=sentence)
         for index, sentence in enumerate(
