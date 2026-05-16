@@ -12,10 +12,12 @@ from langchain_core.language_models.base import LanguageModelInput
 from rexpand_pyutils_file import read_file, write_file
 from dotenv import load_dotenv
 
+# Load environment variables from .env file
 # Load local .env values for notebooks/local runs. In Lambda, these values should
 # be provided through environment variables by the infra stack.
 load_dotenv()
 
+# Get API key from environment variable
 # The OpenAI key is required at import time because the default chat and
 # embedding clients are constructed below.
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -34,6 +36,7 @@ LLM_USE_CACHE: bool = os.getenv("LLM_USE_CACHE", "false").strip().lower() in (
     "on",
 )
 
+# Model selection and temperature
 # Chat model settings. Temperature may be ignored for models that do not support
 # it, handled by _model_supports_temperature below.
 LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-4.1-mini").strip()
@@ -58,7 +61,7 @@ logging.info(f"LLM_EMBEDDING_MODEL: {LLM_EMBEDDING_MODEL}")
 def _model_supports_temperature(model_name: str) -> bool:
     """Return whether this model should receive a temperature argument."""
 
-    # Newer reasoning-style models like gpt-5 do not accept temperature.
+    # Newer reasoning-style models like gpt-5 do not accept temperature
     return not (model_name.startswith("gpt-5"))
 
 
@@ -94,6 +97,7 @@ def invoke_llm(
     """
 
     if use_cache:
+        # Create a hash of the input string
         # Create a stable local file path for this prompt/config combination.
         input_hash = hashlib.md5((str(input) + "|" + str(config)).encode()).hexdigest()
         filepath = f"./.cache/chats/{input_hash}.json"
@@ -139,6 +143,7 @@ def get_embedding(
     """
 
     if use_cache:
+        # Create a hash of the input text and model
         # Include the embedding model in the cache key so changing models cannot
         # accidentally reuse vectors from an older dimensionality/space.
         input_hash = hashlib.md5((text + "|" + embeddings.model).encode()).hexdigest()
@@ -153,6 +158,7 @@ def get_embedding(
             if verbose:
                 logging.info(f"Embedding cache miss: {filepath}")
 
+            # Get embedding from OpenAI
             # Fetch from OpenAI and store as float32 to reduce local cache size.
             embedding_list = embeddings.embed_query(text, **kwargs)
             embedding_array = np.array(embedding_list, dtype=np.float32)

@@ -7,12 +7,7 @@ import numpy as np
 
 
 class DecimalEncoder(json.JSONEncoder):
-    """JSON encoder that understands DynamoDB Decimal values.
-
-    boto3 returns all DynamoDB numbers as ``Decimal``. API Gateway responses must
-    be JSON strings, so any DynamoDB item returned to a client needs this encoder
-    or an equivalent conversion step.
-    """
+    """Custom JSON encoder to handle Decimal objects from DynamoDB."""
 
     def default(self, obj):
         if isinstance(obj, Decimal):
@@ -25,19 +20,20 @@ class DecimalEncoder(json.JSONEncoder):
 
 
 def json_dumps_decimal(obj: Any) -> str:
-    """Serialize an object to JSON while tolerating DynamoDB Decimal values."""
+    """JSON dumps with Decimal support."""
 
+    # DynamoDB returns all numbers as ``Decimal``. API Gateway responses must be
+    # JSON strings, so any DynamoDB item returned to a client needs this encoder
+    # or an equivalent conversion step.
     return json.dumps(obj, cls=DecimalEncoder, default=str)
 
 
 def convert_floats_to_decimal(obj):
-    """Recursively convert numeric values to Decimal for DynamoDB writes.
+    """Recursively convert numeric values (including numpy types) to Decimal for DynamoDB compatibility."""
 
-    DynamoDB rejects Python floats because their binary representation can lose
-    precision. Converting via ``str`` preserves the visible decimal value and
-    supports nested result payloads from matcher calculations.
-    """
-
+    # DynamoDB rejects Python floats because their binary representation can lose
+    # precision. Converting via ``str`` preserves the visible decimal value and
+    # supports nested result payloads from matcher calculations.
     # Preserve Decimal as-is
     if isinstance(obj, Decimal):
         return obj

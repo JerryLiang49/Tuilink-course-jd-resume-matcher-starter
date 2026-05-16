@@ -9,10 +9,12 @@ from typing import Dict, Any, Optional
 from botocore.exceptions import ClientError
 from utils.decimal import json_dumps_decimal
 
+# Initialize AWS clients
 # Module-level clients are reused by warm Lambda containers.
 s3_client = boto3.client('s3')
 cloudfront_client = boto3.client('cloudfront')
 
+# Environment variables
 # Cache configuration injected by the infra stack. Results are stored in S3 and
 # served through CloudFront using the deterministic cache key.
 CACHE_BUCKET_NAME = os.environ['CACHE_BUCKET_NAME']
@@ -21,14 +23,13 @@ CLOUDFRONT_URL = os.environ['CLOUDFRONT_URL']
 
 
 def get_cached_data(hash_key: str) -> Optional[Dict[str, Any]]:
-    """Return cached result data if a JSON object exists for ``hash_key``.
+    """Check if data exists in CloudFront cache and return it if found."""
 
-    CloudFront is checked first because that is the public, fast path clients
-    and workers should prefer. If CloudFront has a temporary network issue, the
-    function falls back to direct S3 access.
-    """
-
+    # CloudFront is checked first because that is the public, fast path clients
+    # and workers should prefer. If CloudFront has a temporary network issue,
+    # the function falls back to direct S3 access.
     try:
+        # Try to retrieve from CloudFront first
         # The worker writes results as <hash>.json, so cached URLs are
         # deterministic and can be reconstructed without another lookup.
         cloudfront_url = f"{CLOUDFRONT_URL}/{hash_key}.json"
@@ -50,6 +51,7 @@ def get_cached_data(hash_key: str) -> Optional[Dict[str, Any]]:
             
     except requests.exceptions.RequestException as e:
         print(f"Error retrieving from CloudFront: {e}")
+        # Fallback to S3 direct access in case of CloudFront issues
         # Fallback to S3 direct access in case CloudFront is unavailable or
         # propagation has not completed yet.
         try:
@@ -70,7 +72,7 @@ def get_cached_data(hash_key: str) -> Optional[Dict[str, Any]]:
 
 
 def check_s3_exists(hash_key: str) -> bool:
-    """Check whether the S3 cache object exists for ``hash_key``."""
+    """Check if data exists in S3 (used by worker for cache validation)."""
 
     try:
         s3_client.head_object(
@@ -85,10 +87,11 @@ def check_s3_exists(hash_key: str) -> bool:
 
 
 def store_in_s3(hash_key: str, data: Dict[str, Any]) -> str:
-    """Store result data in S3 and return its CloudFront URL."""
+    """Store data in S3 and return the CloudFront URL."""
 
     s3_key = f"{hash_key}.json"
     
+    # Store in S3
     # Write JSON result under a deterministic key so identical payloads can be
     # retrieved later without recomputing.
     s3_client.put_object(
@@ -98,6 +101,7 @@ def store_in_s3(hash_key: str, data: Dict[str, Any]) -> str:
         ContentType='application/json'
     )
     
+    # Create CloudFront invalidation to ensure fresh content
     # Invalidate the exact object path so CloudFront serves this new result even
     # if a previous failed/stale object existed with the same key.
     try:
@@ -115,12 +119,13 @@ def store_in_s3(hash_key: str, data: Dict[str, Any]) -> str:
     except Exception as e:
         print(f"Warning: Could not create CloudFront invalidation: {e}")
     
+    # Return CloudFront URL
     cloudfront_url = f"{CLOUDFRONT_URL}/{s3_key}"
     print(f"Data stored in S3 with CloudFront URL: {cloudfront_url}")
     return cloudfront_url
 
 
 def get_cloudfront_url(hash_key: str) -> str:
-    """Build the public CloudFront URL for a cached result key."""
+    """Get CloudFront URL for a given hash key."""
 
     return f"{CLOUDFRONT_URL}/{hash_key}.json"

@@ -102,6 +102,8 @@ class ExtractorState(BaseModel):
     downstream matcher.
     """
 
+    # Core document context (shared across phases)
+
     # Human-readable marker for the current or last completed workflow node.
     # Example values: "phase1:preprocessor", "phase1:keywords_extractor",
     # "phase2:validator", "complete".

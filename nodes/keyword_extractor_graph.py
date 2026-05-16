@@ -10,14 +10,12 @@ from nodes.preprocessor import preprocessor
 
 
 def build_phase1_graph() -> StateGraph:
-    """Construct the Phase 1 extraction graph.
+    """Construct the LangGraph for Phase 1 with looping until comprehensive or max_iter."""
 
-    Phase 1 currently has one responsibility: convert raw document text into a
-    list of sentence objects. The graph abstraction is intentionally used even
-    for this simple case so future phases can add more nodes, loops, and
-    conditional edges without changing the worker handler contract.
-    """
-
+    # Phase 1 currently has one responsibility: convert raw document text into
+    # a list of sentence objects. The graph abstraction is intentionally used
+    # even for this simple case so future phases can add more nodes, loops, and
+    # conditional edges without changing the worker handler contract.
     # StateGraph enforces that every node accepts and returns ExtractorState-like
     # data. LangGraph serializes state between nodes, so model field names are
     # part of the workflow contract.
@@ -35,12 +33,11 @@ def build_phase1_graph() -> StateGraph:
 
 
 def run_phase1(document_text: str, max_iter: int = 3) -> ExtractorState:
-    """Run Phase 1 end-to-end and return the populated state.
+    """Run Phase 1 end-to-end and return the merged, comprehensive ExtractorState."""
 
-    ``max_iter`` is kept in the signature for compatibility with the intended
-    iterative extractor design, but it is not used by the current one-node graph.
-    """
-
+    # ``max_iter`` is kept in the signature for compatibility with the intended
+    # iterative extractor design, but it is not used by the current one-node
+    # graph.
     workflow = build_phase1_graph()
     app = workflow.compile()
 

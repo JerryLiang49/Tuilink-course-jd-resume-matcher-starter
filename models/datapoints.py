@@ -88,13 +88,11 @@ class Skill(BaseDataPoint):
     proficiency: ProficiencyEnum
 
     def get_yoe(self) -> float:
-        """Return comparable years of experience for scoring.
+        """Get years of experience, converting from proficiency if yoe is None."""
 
-        If the extractor found an explicit numeric YOE, use it directly. If not,
-        map the proficiency label to the lower bound of an approximate range so
-        downstream matchers can compare skills on one numeric scale.
-        """
-
+        # Return comparable years of experience for scoring. If the extractor
+        # found an explicit numeric YOE, use it directly. If not, map the
+        # proficiency label to the lower bound of an approximate range.
         if self.yoe is not None:
             return self.yoe
 

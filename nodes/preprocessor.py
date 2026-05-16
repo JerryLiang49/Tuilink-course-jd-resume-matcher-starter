@@ -12,13 +12,11 @@ from utils.llm import (
 
 
 def preprocessor(state: ExtractorState) -> ExtractorState:
-    """Split one raw document into sentence chunks.
+    """Pre-process the input text into sentences."""
 
-    This is the first extraction step for both resumes and job descriptions.
-    The downstream skill extractor should operate on the numbered sentences
-    rather than the raw document so every skill can cite evidence.
-    """
-
+    # This is the first extraction step for both resumes and job descriptions.
+    # The downstream skill extractor should operate on the numbered sentences
+    # rather than the raw document so every skill can cite evidence.
     if not state.document:
         raise ValueError("Document is empty")
 

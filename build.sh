@@ -1,6 +1,8 @@
 #!/bin/bash
 
+# Build script for AI Auto Reply project
 # Build script for JD Resume Matcher project
+# Creates a dist folder with all necessary files and folders
 # Creates a dist folder with the Lambda handlers, dependency manifest, and
 # source folders needed by the AWS CDK bundling step.
 
@@ -8,11 +10,13 @@ set -e  # Exit on any error
 
 echo "🚀 Starting build process..."
 
+# Get the directory where this script is located
 # Resolve paths relative to this script so the build works even when launched
 # from another current working directory.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST_DIR="$SCRIPT_DIR/dist"
 
+# Remove existing dist folder if it exists
 # Start from a clean output folder so deleted source files do not survive from a
 # previous build.
 if [ -d "$DIST_DIR" ]; then
@@ -39,6 +43,7 @@ for file in "${files[@]}"; do
     fi
 done
 
+# Copy and rename requirements-compact.txt to requirements.txt
 # The infra bundler expects a requirements.txt at the Lambda source root. The
 # compact file avoids installing notebook-only packages in AWS.
 if [ -f "$SCRIPT_DIR/requirements-compact.txt" ]; then
@@ -59,6 +64,7 @@ for folder in "${folders[@]}"; do
         # Create destination folder
         mkdir -p "$DIST_DIR/$folder"
         
+        # Copy contents, excluding __pycache__ and .DS_Store
         # Copy only source/data files that should be packaged into Lambda.
         find "$SCRIPT_DIR/$folder" -type f \( -name "*.py" -o -name "*.json" -o -name "*.xlsx" -o -name "*.txt" -o -name "*.md" \) -exec cp {} "$DIST_DIR/$folder/" \;
         
@@ -81,6 +87,7 @@ for package in "${python_packages[@]}"; do
     fi
 done
 
+# Calculate total size
 # Print a compact artifact summary to make deployment debugging easier.
 total_size=$(du -sh "$DIST_DIR" | cut -f1)
 echo ""

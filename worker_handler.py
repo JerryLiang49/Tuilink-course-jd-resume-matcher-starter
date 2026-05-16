@@ -14,9 +14,11 @@ from utils.s3_cloudfront import get_cached_data, store_in_s3, json_dumps_decimal
 from utils.decimal import convert_floats_to_decimal
 from nodes.keyword_extractor_graph import run_phase1
 
+# Initialize AWS clients
 # Reuse the DynamoDB resource across warm Lambda invocations.
 dynamodb = boto3.resource("dynamodb")
 
+# Environment variables
 # Deployment-provided configuration. The worker only needs the jobs table name;
 # cache bucket/CloudFront settings are read by utils.s3_cloudfront.
 JOBS_TABLE_NAME = os.environ["JOBS_TABLE_NAME"]
@@ -25,6 +27,7 @@ JOBS_TABLE_NAME = os.environ["JOBS_TABLE_NAME"]
 # starter extracts sentences but does not yet compute skill overlap.
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.5").strip())
 
+# DynamoDB table
 # Table shared with the quick Lambda. The quick Lambda creates jobs; the worker
 # updates the same items as PROCESSING, SUCCEEDED, or FAILED.
 jobs_table = dynamodb.Table(JOBS_TABLE_NAME)
@@ -33,13 +36,11 @@ jobs_table = dynamodb.Table(JOBS_TABLE_NAME)
 def update_job_status(
     job_id: str, status: str, result: Dict[str, Any] = None, error: str = None
 ) -> None:
-    """Update job status in DynamoDB.
+    """Update job status in DynamoDB."""
 
-    DynamoDB stores Python floats as Decimal, not float. Any result payload with
-    scores or embeddings must be converted before writing, otherwise boto3 will
-    raise a serialization error.
-    """
-
+    # DynamoDB stores Python floats as Decimal, not float. Any result payload
+    # with scores or embeddings must be converted before writing, otherwise
+    # boto3 will raise a serialization error.
     try:
         # Always update status and updated_at; optionally attach result or error.
         update_expression = "SET #status = :status, updated_at = :updated_at"
@@ -77,8 +78,9 @@ def update_job_status(
 
 
 def get_job_payload(job_id: str) -> Dict[str, Any]:
-    """Get the original resume/JD payload for a queued job."""
+    """Get job payload from DynamoDB."""
 
+    # Return the original resume/JD payload for a queued job.
     try:
         response = jobs_table.get_item(Key={"job_id": job_id})
 
@@ -91,6 +93,7 @@ def get_job_payload(job_id: str) -> Dict[str, Any]:
                 # Older records or tests may store payload as a JSON string.
                 return json.loads(payload)
             except Exception:
+                # Fallback to raw string payload
                 # Fallback for legacy/debug data where payload is plain text.
                 return {"raw": payload}
         return payload
@@ -128,20 +131,18 @@ def _skill_to_dict(sk) -> Dict[str, Any]:
 
 
 def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
-    """Run the async extraction/matching workflow for one job.
+    """Process the job: run Phase 1 and Phase 2 for resume and JD, then compute matching score."""
 
-    Current implementation:
-    1. Normalize resume/JD input.
-    2. Check S3/CloudFront cache by deterministic payload hash.
-    3. Run Phase 1 sentence preprocessing for both JD and resume.
-    4. Store the partial extraction result and mark the job as SUCCEEDED.
-
-    The starter still leaves Phase 2 skill extraction and final matching score
-    computation as TODOs.
-    """
-
+    # Current implementation:
+    # 1. Normalize resume/JD input.
+    # 2. Check S3/CloudFront cache by deterministic payload hash.
+    # 3. Run Phase 1 sentence preprocessing for both JD and resume.
+    # 4. Store the partial extraction result and mark the job as SUCCEEDED.
+    # The starter still leaves Phase 2 skill extraction and final matching score
+    # computation as TODOs.
     print(f"Processing job {job_id} with payload: {payload}")
 
+    # Normalize payload
     # Normalize payload from all supported shapes. Production jobs are dicts from
     # quick_handler, but direct tests may pass JSON strings.
     if isinstance(payload, dict):
@@ -163,12 +164,14 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
     if not resume_text or not jd_text:
         raise ValueError("Both resume_text and jd_text must be provided")
 
+    # Calculate cache key consistently with quick_handler
     # Calculate cache key consistently with quick_handler so duplicate requests
     # hit the same cache object and DynamoDB GSI entry.
     normalized_payload = {"resume_text": resume_text, "jd_text": jd_text}
     cache_key = calculate_hash(json.dumps(normalized_payload, ensure_ascii=False))
     print(f"Cache key for job {job_id}: {cache_key}")
 
+    # Check CloudFront/S3 cache
     # If the exact same resume/JD pair has already been processed, reuse the
     # cached result and skip all LLM calls.
     existing_cache_data = get_cached_data(cache_key)
@@ -178,28 +181,35 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
         print(f"Job {job_id} completed from cache")
         return existing_cache_data
 
+    # Update job status to PROCESSING
     # Mark as PROCESSING only after cache miss. Cached jobs can go directly to
     # SUCCEEDED above.
     update_job_status(job_id, "PROCESSING")
 
+    # Run Phase 1 and Phase 2 for JD
     # Run Phase 1 for the job description. The returned state currently contains
     # sentence chunks and an empty datapoints.skills list.
     print(f"Running Phase 1 for JD...")
     jd_phase1_state = run_phase1(jd_text)
 
+    # TODO: Implement Phase 2
     # TODO: Implement Phase 2 for JD skill extraction and validation.
 
+    # Run Phase 1 and Phase 2 for Resume
     # Run Phase 1 for the resume using the same graph. The resume path should
     # eventually produce candidate skills/evidence from the candidate profile.
     print(f"Running Phase 1 for Resume...")
     resume_phase1_state = run_phase1(resume_text)
 
+    # TODO: Implement Phase 2
     # TODO: Implement Phase 2 for resume skill extraction and validation.
 
+    # TODO: Implement Matcher
     # TODO: Implement matcher using the extracted JD and resume skills. A future
     # matcher would likely compute skill-level matches plus precision/recall/F1.
 
 
+    # TODO: Output matching results
     # Current output intentionally exposes only the Phase 1 extraction result and
     # leaves matching empty until the skill extraction/matcher phases exist.
     processed_result = {
@@ -215,6 +225,7 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
         "processed_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    # Store result in S3 and get CloudFront URL
     # Persist the output under the cache key so future identical jobs can be
     # served from CloudFront/S3 instead of recomputing.
     try:
@@ -230,16 +241,18 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
 
 
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """SQS-triggered Lambda entrypoint for background job processing."""
+    """Lambda handler function for worker processing."""
 
     print(f"Worker received event: {json.dumps(event)}")
 
+    # Process SQS messages
     # AWS can batch multiple SQS messages into one Lambda invocation. Process
     # each independently so one bad message does not block the entire batch.
     records = event.get("Records", [])
 
     for record in records:
         try:
+            # Parse SQS message
             # Messages are created by quick_handler and should contain only a
             # job_id. The payload is fetched from DynamoDB by id.
             message_body = json.loads(record["body"])
@@ -251,6 +264,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             print(f"Processing job: {job_id}")
 
+            # Get job payload from DynamoDB
             try:
                 payload = get_job_payload(job_id)
             except ValueError as e:
@@ -263,6 +277,7 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 )
                 continue
 
+            # Process the job
             try:
                 result = process_job(job_id, payload)
                 print(f"Job {job_id} processed successfully")
