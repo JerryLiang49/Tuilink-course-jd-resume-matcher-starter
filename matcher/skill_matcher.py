@@ -40,6 +40,12 @@ ALIASES = {
     "py": "python",
     "react js": "react",
     "react.js": "react",
+    "rest api development": "rest api",
+    "rest api": "rest api",
+    "rest apis": "rest api",
+    "restful api development": "rest api",
+    "restful api": "rest api",
+    "restful apis": "rest api",
     "sql databases": "sql",
     "ts": "typescript",
 }
@@ -82,7 +88,18 @@ def _tokenize(value: str) -> set[str]:
 
     # Token overlap handles compound skills where word order or separators vary,
     # such as "data-analysis" vs "data analysis".
-    return {token for token in re.split(r"[\s/.-]+", value) if token}
+    tokens: set[str] = set()
+    for token in re.split(r"[\s/.-]+", value):
+        if not token:
+            continue
+        # Normalize common plural forms after aliasing. This catches cases where
+        # the extractor emits "REST APIs" on one side and "REST API development"
+        # on the other without making the whole matcher depend on embeddings.
+        if token == "apis":
+            token = "api"
+        tokens.add(token)
+
+    return tokens
 
 
 def _similarity(jd_name: str, resume_name: str) -> tuple[float, str]:
