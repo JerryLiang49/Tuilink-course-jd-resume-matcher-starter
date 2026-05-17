@@ -9,7 +9,7 @@ This project implements an extraction and matching workflow that:
 1. Preprocesses raw text into sentences (implemented)
 2. Extracts and merges skills with sentence references (implemented)
 3. Validates and modifies skills for consistency (basic local cleanup implemented)
-4. Computes professional matching metrics (precision, recall, F1) (to be implemented)
+4. Computes professional matching metrics (precision, recall, F1) (implemented locally)
 
 ## Project Structure
 
@@ -18,6 +18,7 @@ This project implements an extraction and matching workflow that:
 ├── docs/                      # Mermaid charts for workflows
 ├── examples/                  # Sample inputs (e.g., job_description.md)
 ├── models/                    # Core data models
+├── matcher/                   # Local skill matching and scoring logic
 ├── nodes/                     # Processing nodes and graph builders
 ├── utils/                     # Utility functions (LLM, cache, JSON, hash)
 ├── .env.example               # Example environment config
