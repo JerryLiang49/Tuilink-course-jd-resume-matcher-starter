@@ -199,6 +199,8 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
     # Run the local matcher using extracted skills. The matcher is deterministic
     # and computes precision, recall, F1, requirement coverage, missing JD
     # skills, and extra resume skills without another LLM call.
+    # It consumes only ExtractorState.datapoints so the matcher stays decoupled
+    # from sentence preprocessing and LLM extraction internals.
     matcher_result = match_resume_to_jd(
         jd_extractor_state.datapoints,
         resume_extractor_state.datapoints,
@@ -213,8 +215,13 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
         "source": "processor",
         "input_data": normalized_payload,
         "extractions": {
+            # Full extractor states are included for debugging and traceability.
+            # They contain sentences, extraction history, checker results, and
+            # validator results for each document.
             "jd": jd_extractor_state.model_dump(mode="json"),
             "resume": resume_extractor_state.model_dump(mode="json"),
+            # Flattened skill lists are duplicated here for consumers that only
+            # need extracted skills and do not want to parse the full states.
             "jd_skills": [
                 _skill_to_dict(skill) for skill in jd_extractor_state.datapoints.skills
             ],
@@ -223,6 +230,8 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
                 for skill in resume_extractor_state.datapoints.skills
             ],
         },
+        # MatcherResult is already JSON-safe because it is a Pydantic model with
+        # enum fields serialized through mode="json".
         "matching": matcher_result.model_dump(mode="json"),
         "processed_at": datetime.now(timezone.utc).isoformat(),
     }

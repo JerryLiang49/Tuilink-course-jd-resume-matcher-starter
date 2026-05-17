@@ -41,21 +41,35 @@ class MatchedSkill(BaseModel):
 class MissingSkill(BaseModel):
     """JD skill that was not covered by the resume."""
 
+    # Name/category/importance are copied directly from the JD datapoint so the
+    # UI can explain exactly which requirement was missed.
     name: str
     category: CategoryEnum
     importance: ImportanceEnum
+
+    # Optional JD requirement metadata. If yoe is present, the JD explicitly
+    # asked for that many years; otherwise proficiency is the qualitative signal
+    # extracted from the JD.
     yoe: Optional[float] = None
     proficiency: ProficiencyEnum
+
+    # Evidence ids point to the JD ExtractorState.sentences list.
     referenced_sentence_ids: List[str]
 
 
 class ExtraResumeSkill(BaseModel):
     """Resume skill that did not map to any JD skill."""
 
+    # Extra skills are not "bad"; they are resume strengths that did not improve
+    # JD coverage under the current matching threshold.
     name: str
     category: CategoryEnum
+
+    # Resume-side capability metadata retained for display/debugging.
     yoe: Optional[float] = None
     proficiency: ProficiencyEnum
+
+    # Evidence ids point to the resume ExtractorState.sentences list.
     referenced_sentence_ids: List[str]
 
 
@@ -68,21 +82,33 @@ class MatcherResult(BaseModel):
     easier to inspect than one aggregate score.
     """
 
+    # Similarity threshold used by matcher.skill_matcher. Raising it makes
+    # matching stricter; lowering it allows looser fuzzy matches.
     threshold: float
+
+    # Raw counts used to interpret precision/recall.
     jd_skill_count: int
     resume_skill_count: int
     matched_skill_count: int
 
+    # precision = matched resume skills / all resume skills
+    # recall = matched JD skills / all JD skills
+    # f1 = harmonic mean of precision and recall
     precision: float
     recall: float
     f1: float
+
+    # Requirement-specific recall splits out required and preferred JD skills.
     required_recall: float
     preferred_recall: float
+
+    # Among matched skills, the share where resume YOE satisfies explicit JD YOE.
     yoe_satisfaction_rate: float
 
     # Overall score intentionally uses F1 so it remains easy to explain.
     overall_score: float
 
+    # Detailed evidence for how the aggregate metrics were produced.
     matched_skills: List[MatchedSkill]
     missing_required_skills: List[MissingSkill]
     missing_preferred_skills: List[MissingSkill]
