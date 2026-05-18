@@ -1,32 +1,14 @@
 """LLM-backed preprocessing node that splits documents into sentences."""
 
-import json
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from models.sentence import RawSentences, Sentence
 from models.extractor_state import ExtractorState
+from utils.json import parse_response_json
 from utils.llm import (
     invoke_llm,
     LLM_USE_CACHE,
 )
-
-
-def _response_json(response) -> dict:
-    """Parse JSON from the LLM response across supported content formats."""
-
-    content = response.content
-    if isinstance(content, str):
-        raw_text = content
-    elif isinstance(content, list):
-        raw_text = "\n".join(
-            block.get("text", "")
-            for block in content
-            if isinstance(block, dict) and block.get("text")
-        )
-    else:
-        raw_text = str(content)
-
-    return json.loads(raw_text)
 
 
 def preprocessor(state: ExtractorState) -> ExtractorState:
@@ -72,6 +54,6 @@ def preprocessor(state: ExtractorState) -> ExtractorState:
     # becomes the evidence id used by later skill datapoints.
     state.sentences = [
         Sentence(id=index, sentence=sentence)
-        for index, sentence in enumerate(_response_json(response)["sentences"])
+        for index, sentence in enumerate(parse_response_json(response)["sentences"])
     ]
     return state
