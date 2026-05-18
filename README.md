@@ -7,8 +7,8 @@ An intelligent system for extracting skills from job descriptions and resumes an
 This project implements an extraction and matching workflow that:
 
 1. Preprocesses raw text into sentences (implemented)
-2. Extracts and merges skills with sentence references (to be implemented)
-3. Validates and modifies skills for consistency (to be implemented)
+2. Extracts and merges skills with sentence references (implemented)
+3. Validates and modifies skills for consistency (basic local cleanup implemented)
 4. Computes professional matching metrics (precision, recall, F1) (to be implemented)
 
 ## Project Structure

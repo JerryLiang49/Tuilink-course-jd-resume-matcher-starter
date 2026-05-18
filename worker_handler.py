@@ -12,7 +12,7 @@ from botocore.exceptions import ClientError
 from utils.hash import calculate_hash
 from utils.s3_cloudfront import get_cached_data, store_in_s3, json_dumps_decimal
 from utils.decimal import convert_floats_to_decimal
-from nodes.keyword_extractor_graph import run_phase1
+from nodes.keyword_extractor_graph import run_keywords_extractor
 
 # Initialize AWS clients
 # Reuse the DynamoDB resource across warm Lambda invocations.
@@ -24,7 +24,8 @@ dynamodb = boto3.resource("dynamodb")
 JOBS_TABLE_NAME = os.environ["JOBS_TABLE_NAME"]
 
 # Matching threshold is reserved for the future matcher phase. The current
-# starter extracts sentences but does not yet compute skill overlap.
+# worker now extracts validated JD/resume skills but does not yet compute final
+# skill-overlap metrics.
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.5").strip())
 
 # DynamoDB table
@@ -136,10 +137,9 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
     # Current implementation:
     # 1. Normalize resume/JD input.
     # 2. Check S3/CloudFront cache by deterministic payload hash.
-    # 3. Run Phase 1 sentence preprocessing for both JD and resume.
-    # 4. Store the partial extraction result and mark the job as SUCCEEDED.
-    # The starter still leaves Phase 2 skill extraction and final matching score
-    # computation as TODOs.
+    # 3. Run the local Keywords Extractor for both JD and resume.
+    # 4. Store extracted sentences/skills and mark the job as SUCCEEDED.
+    # The final matcher score computation is still left for a later homework.
     print(f"Processing job {job_id} with payload: {payload}")
 
     # Normalize payload
@@ -186,23 +186,16 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
     # SUCCEEDED above.
     update_job_status(job_id, "PROCESSING")
 
-    # Run Phase 1 and Phase 2 for JD
-    # Run Phase 1 for the job description. The returned state currently contains
-    # sentence chunks and an empty datapoints.skills list.
-    print(f"Running Phase 1 for JD...")
-    jd_phase1_state = run_phase1(jd_text)
+    # Run the local Keywords Extractor for the job description. The returned
+    # state contains preprocessed sentences, extraction history, merged skills,
+    # comprehensive checker output, and validation output.
+    print(f"Running Keywords Extractor for JD...")
+    jd_extractor_state = run_keywords_extractor(jd_text)
 
-    # TODO: Implement Phase 2
-    # TODO: Implement Phase 2 for JD skill extraction and validation.
-
-    # Run Phase 1 and Phase 2 for Resume
-    # Run Phase 1 for the resume using the same graph. The resume path should
-    # eventually produce candidate skills/evidence from the candidate profile.
-    print(f"Running Phase 1 for Resume...")
-    resume_phase1_state = run_phase1(resume_text)
-
-    # TODO: Implement Phase 2
-    # TODO: Implement Phase 2 for resume skill extraction and validation.
+    # Run the same local Keywords Extractor for the resume. Running the graph
+    # separately keeps evidence ids local to each document.
+    print(f"Running Keywords Extractor for Resume...")
+    resume_extractor_state = run_keywords_extractor(resume_text)
 
     # TODO: Implement Matcher
     # TODO: Implement matcher using the extracted JD and resume skills. A future
@@ -210,15 +203,22 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
 
 
     # TODO: Output matching results
-    # Current output intentionally exposes only the Phase 1 extraction result and
-    # leaves matching empty until the skill extraction/matcher phases exist.
+    # Current output exposes validated extraction results and leaves matching
+    # empty until the skill-overlap scorer is implemented.
     processed_result = {
         "cache_key": cache_key,
         "source": "processor",
         "input_data": normalized_payload,
         "extractions": {
-            "jd_sentences": jd_phase1_state.sentences,
-            "resume_sentences": resume_phase1_state.sentences,
+            "jd": jd_extractor_state.model_dump(mode="json"),
+            "resume": resume_extractor_state.model_dump(mode="json"),
+            "jd_skills": [
+                _skill_to_dict(skill) for skill in jd_extractor_state.datapoints.skills
+            ],
+            "resume_skills": [
+                _skill_to_dict(skill)
+                for skill in resume_extractor_state.datapoints.skills
+            ],
         },
         "matching": {
         },
