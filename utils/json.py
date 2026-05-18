@@ -1,10 +1,18 @@
+"""JSON compatibility helpers for notebook/debug output."""
+
 import numpy as np
+
 
 def to_json_compatible(obj):
     """
     Recursively convert numpy arrays and numpy scalar types to Python native types
     for JSON serialization.
+
+    This is useful for local notebook/debug output. Worker results that go to
+    DynamoDB use ``convert_floats_to_decimal`` instead because DynamoDB has
+    stricter number requirements than plain JSON.
     """
+
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     elif isinstance(obj, (np.generic,)):
