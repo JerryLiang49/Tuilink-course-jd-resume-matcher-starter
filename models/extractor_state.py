@@ -35,18 +35,22 @@ class ComprehensiveCheckResult(BaseModel):
     """Output of the Phase 1 Comprehensive Checker.
 
     The checker decides whether the merged keywords cover the important
-    evidence in the document. If not, the workflow should call the Supplementary
-    Extractor with the missing areas.
+    evidence in the document. It is intentionally diagnostic only: it reports
+    missing concepts and sentence ids, but it does not create or edit skills.
+    If coverage is incomplete, the workflow should route this result to the
+    separate Supplementary Extractor node, which owns the fix step.
     """
 
     # True means Phase 1 can end and hand the merged datapoints to Phase 2.
     is_comprehensive: bool = False
 
-    # Human-readable missing skills or concepts the supplementary extractor
-    # should focus on.
+    # Human-readable missing skills or concepts. This is routing/focus input for
+    # the Supplementary Extractor, not the fixed skill output itself.
     missing_keywords: List[str] = Field(default_factory=list)
 
     # Sentence ids that appear relevant but are not covered by current keywords.
+    # The checker identifies the evidence gap; the Supplementary Extractor uses
+    # these ids to produce the next extraction pass.
     missing_sentence_ids: List[str] = Field(default_factory=list)
 
     # Optional debug score and explanation from the LLM checker.
@@ -78,8 +82,10 @@ class ValidationIssue(BaseModel):
 class ValidationResult(BaseModel):
     """Output of the Phase 2 Validator.
 
-    If ``is_valid`` is false, the workflow should call the Modifier and then run
-    validation again until either valid or max iterations are reached.
+    This mirrors the checker/fixer split in Phase 1. The Validator only reports
+    concrete issues. If ``is_valid`` is false, the workflow should call the
+    separate Modifier node and then run validation again until either valid or
+    max iterations are reached.
     """
 
     # True means Phase 2 can finish and the datapoints are ready for matching.
