@@ -316,37 +316,78 @@ def _f1(precision: float, recall: float) -> float:
     return _round_score(2 * precision * recall / (precision + recall))
 
 
+def _qualification_scale(jd_skill: Skill, resume_skill: Skill) -> float:
+    """Return the design-doc proficiency/YOE scale for one JD/resume pair."""
+
+    # The design uses sigma(a, b)=min(1, yoe_a / yoe_b) when b requires YOE.
+    # In this product, the resume is the provider and the JD is the requirement,
+    # so under-qualified resume evidence lowers the keyword-pair score.
+    required_yoe = jd_skill.get_yoe()
+    if required_yoe <= 0:
+        return 1.0
+
+    provided_yoe = resume_skill.get_yoe()
+    return _round_score(min(1.0, provided_yoe / required_yoe))
+
+
+def _keyword_pair_score(
+    jd_skill: Skill,
+    resume_skill: Skill,
+    *,
+    threshold: float,
+    embedding_cache: dict[str, Any],
+    embedding_state: dict[str, bool],
+    embedding_threshold: float,
+) -> tuple[float, str]:
+    """Compute thresholded semantic similarity multiplied by YOE scale."""
+
+    semantic_score, match_type = _similarity(
+        jd_skill.name,
+        resume_skill.name,
+        embedding_cache=embedding_cache,
+        embedding_state=embedding_state,
+        embedding_threshold=embedding_threshold,
+    )
+
+    # The design threshold filters out overly-general/weak keyword pairs before
+    # they contribute to document-level precision or recall.
+    if semantic_score < threshold:
+        return 0.0, match_type
+
+    scaled_score = semantic_score * _qualification_scale(jd_skill, resume_skill)
+    return _round_score(scaled_score), match_type
+
+
 def _best_target_match(
     source_skill: Skill,
     target_skills: list[Skill],
-    used_target_indexes: set[int],
     threshold: float,
     *,
+    source_is_jd: bool,
     embedding_cache: dict[str, Any],
     embedding_state: dict[str, bool],
     embedding_threshold: float,
 ) -> tuple[int | None, float, str]:
-    """Find the best unused target skill for one source skill."""
+    """Find the best target keyword for one source keyword."""
 
-    # A target skill can only satisfy one source skill. This keeps precision/recall
-    # interpretable and avoids one broad resume skill inflating coverage.
     best_index: int | None = None
     best_score = 0.0
     best_match_type = "fuzzy"
 
     for index, target_skill in enumerate(target_skills):
-        if index in used_target_indexes:
-            continue
-
         # Hard skills and soft skills are not interchangeable for matching.
         if source_skill.category != target_skill.category:
             continue
 
-        # Similarity only compares names. Category filtering already happened,
-        # and YOE/proficiency are evaluated after the match is selected.
-        score, match_type = _similarity(
-            source_skill.name,
-            target_skill.name,
+        # The directional pass chooses which side is the source for BERTScore-
+        # style max matching, but the YOE scale is always interpreted as resume
+        # evidence satisfying a JD requirement.
+        jd_skill = source_skill if source_is_jd else target_skill
+        resume_skill = target_skill if source_is_jd else source_skill
+        score, match_type = _keyword_pair_score(
+            jd_skill,
+            resume_skill,
+            threshold=threshold,
             embedding_cache=embedding_cache,
             embedding_state=embedding_state,
             embedding_threshold=embedding_threshold,
@@ -356,9 +397,7 @@ def _best_target_match(
             best_score = score
             best_match_type = match_type
 
-    if best_index is None or best_score < threshold:
-        # Below threshold means "not covered" even if it is the best available
-        # resume skill.
+    if best_index is None:
         return None, 0.0, "fuzzy"
 
     return best_index, best_score, best_match_type
@@ -375,27 +414,34 @@ def _directional_match(
     embedding_state: dict[str, bool],
     embedding_threshold: float,
 ) -> tuple[DirectionalMatchResult, list[Skill], set[int]]:
-    """Run one greedy directional matching pass."""
+    """Run one BERTScore-style directional matching pass.
 
-    used_target_indexes: set[int] = set()
+    For each source keyword, find the maximum thresholded keyword-pair score in
+    the target set. The final direction score is the average of those max scores
+    with uniform weights, matching the initial design-doc recommendation.
+    """
+
     matched_skills: list[MatchedSkill] = []
     unmatched_source_skills: list[Skill] = []
+    best_target_indexes: set[int] = set()
+    best_scores: list[float] = []
 
     for source_skill in source_skills:
         target_index, score, match_type = _best_target_match(
             source_skill,
             target_skills,
-            used_target_indexes,
             threshold,
+            source_is_jd=source_is_jd,
             embedding_cache=embedding_cache,
             embedding_state=embedding_state,
             embedding_threshold=embedding_threshold,
         )
+        best_scores.append(score)
         if target_index is None:
             unmatched_source_skills.append(source_skill)
             continue
 
-        used_target_indexes.add(target_index)
+        best_target_indexes.add(target_index)
         target_skill = target_skills[target_index]
 
         # MatchedSkill remains JD/resume-shaped even when the source direction is
@@ -404,22 +450,17 @@ def _directional_match(
         resume_skill = target_skill if source_is_jd else source_skill
         matched_skills.append(_matched_skill(jd_skill, resume_skill, score, match_type))
 
-    source_coverage = _safe_ratio(len(matched_skills), len(source_skills))
-    target_coverage = _safe_ratio(len(matched_skills), len(target_skills))
-
     return (
         DirectionalMatchResult(
             direction=direction,  # type: ignore[arg-type]
             source_skill_count=len(source_skills),
             target_skill_count=len(target_skills),
             matched_skill_count=len(matched_skills),
-            source_coverage=source_coverage,
-            target_coverage=target_coverage,
-            f1=_f1(source_coverage, target_coverage),
+            score=_safe_ratio(sum(best_scores), len(source_skills)),
             matched_skills=matched_skills,
         ),
         unmatched_source_skills,
-        used_target_indexes,
+        best_target_indexes,
     )
 
 
@@ -486,25 +527,33 @@ def match_resume_to_jd(
     required_total = sum(
         1 for skill in jd_skills if skill.importance == ImportanceEnum.REQUIRED
     )
-    required_matched = sum(
-        1 for skill in matched_skills if skill.jd_importance == ImportanceEnum.REQUIRED
+    required_score_sum = sum(
+        skill.similarity
+        for skill in matched_skills
+        if skill.jd_importance == ImportanceEnum.REQUIRED
     )
     preferred_total = sum(
         1 for skill in jd_skills if skill.importance == ImportanceEnum.PREFERRED
     )
-    preferred_matched = sum(
-        1 for skill in matched_skills if skill.jd_importance == ImportanceEnum.PREFERRED
+    preferred_score_sum = sum(
+        skill.similarity
+        for skill in matched_skills
+        if skill.jd_importance == ImportanceEnum.PREFERRED
     )
 
-    precision = jd_to_resume.target_coverage
-    recall = jd_to_resume.source_coverage
-    f1 = jd_to_resume.f1
+    # Design-doc mapping:
+    # recall is JD -> resume because every JD requirement asks for its best
+    # resume evidence; precision is resume -> JD because every resume skill asks
+    # for its best JD requirement. The final score is their harmonic mean.
+    recall = jd_to_resume.score
+    precision = resume_to_jd.score
+    f1 = _f1(precision, recall)
 
     # Experience satisfaction is evaluated only for matched skills. Unmatched
     # skills already hurt recall and should not be double-counted here.
     yoe_satisfied = sum(1 for skill in matched_skills if skill.yoe_satisfied)
     yoe_satisfaction_rate = _safe_ratio(yoe_satisfied, len(matched_skills))
-    bidirectional_score = _round_score((jd_to_resume.f1 + resume_to_jd.f1) / 2)
+    bidirectional_score = f1
 
     # Split missing skills by JD importance so API clients can show required
     # gaps separately from preferred/unknown gaps.
@@ -516,8 +565,8 @@ def match_resume_to_jd(
         precision=precision,
         recall=recall,
         f1=f1,
-        required_recall=_safe_ratio(required_matched, required_total),
-        preferred_recall=_safe_ratio(preferred_matched, preferred_total),
+        required_recall=_safe_ratio(required_score_sum, required_total),
+        preferred_recall=_safe_ratio(preferred_score_sum, preferred_total),
         yoe_satisfaction_rate=yoe_satisfaction_rate,
         jd_to_resume=jd_to_resume,
         resume_to_jd=resume_to_jd,

@@ -78,10 +78,11 @@ class DirectionalMatchResult(BaseModel):
     """One directional matching pass between source and target skill sets.
 
     The design doc calls for two passes:
-    ``jd_to_resume`` asks how well the resume covers JD requirements, while
-    ``resume_to_jd`` asks how much of the resume is relevant to the JD. Keeping
-    both summaries makes asymmetric cases visible instead of hiding them behind
-    one aggregate score.
+    ``jd_to_resume`` computes recall by asking how well resume skills cover JD
+    requirements, while ``resume_to_jd`` computes precision by asking how much
+    of the resume is relevant to the JD. Each score follows the BERTScore-style
+    formula from the design: for every source keyword, take the best target
+    keyword similarity, then average those best scores.
     """
 
     # Direction of this pass. The source side is matched greedily into the
@@ -93,12 +94,10 @@ class DirectionalMatchResult(BaseModel):
     target_skill_count: int
     matched_skill_count: int
 
-    # source_coverage = matched source skills / all source skills
-    # target_coverage = matched target skills / all target skills
-    # f1 balances those two directional coverage values.
-    source_coverage: float
-    target_coverage: float
-    f1: float
+    # Weighted average of max keyword-pair scores for this direction. The
+    # current implementation uses uniform weights, matching the design doc's
+    # "start with evenly weighted keywords" note.
+    score: float
 
     # Matched evidence for this pass. Names are still stored as JD/resume
     # because the UI needs to show both documents consistently.
@@ -138,21 +137,19 @@ class MatcherResult(BaseModel):
     # Among matched skills, the share where resume YOE satisfies explicit JD YOE.
     yoe_satisfaction_rate: float
 
-    # Explicit directional summaries required by the matcher design. The
-    # top-level precision/recall/f1 fields mirror ``jd_to_resume`` for older
-    # callers.
+    # Explicit directional summaries required by the matcher design.
     jd_to_resume: DirectionalMatchResult
     resume_to_jd: DirectionalMatchResult
 
-    # Average of both directional F1 scores.
+    # Alias for the final F1 score over directional precision and recall.
     bidirectional_score: float
 
     # Whether embedding similarity was requested and remained available.
     embedding_enabled: bool = False
     embedding_threshold: Optional[float] = None
 
-    # Overall score intentionally uses the bidirectional score so it reflects
-    # both requirement coverage and resume relevance.
+    # Overall score intentionally uses bidirectional F1 so it reflects both
+    # requirement coverage and resume relevance.
     overall_score: float
 
     # Detailed evidence for how the aggregate metrics were produced.
