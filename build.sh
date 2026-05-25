@@ -31,9 +31,10 @@ echo "Created $DIST_DIR"
 # Copy individual files
 echo "Copying files..."
 
-# These are the Lambda entrypoints plus local environment config. Copying .env is
-# convenient for class demos, but do not publish dist/ if .env contains secrets.
-files=(".env" "quick_handler.py" "worker_handler.py")
+# These are the Lambda entrypoints. Do not copy .env into dist because dist is
+# uploaded to Lambda by the infra repo; secrets must be injected as Lambda
+# environment variables instead.
+files=("quick_handler.py" "worker_handler.py")
 for file in "${files[@]}"; do
     if [ -f "$SCRIPT_DIR/$file" ]; then
         cp "$SCRIPT_DIR/$file" "$DIST_DIR/"

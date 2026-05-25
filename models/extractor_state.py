@@ -2,7 +2,7 @@
 
 from typing import List, Literal, Optional
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from models.base import BaseModel
 from models.datapoints import DataPoints
@@ -17,6 +17,8 @@ class ExtractionPass(BaseModel):
     the Comprehensive Checker says the result is incomplete. Keeping each pass
     lets us debug where a keyword came from and merge results deterministically.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     # Which node produced this pass.
     source: Literal["keywords_extractor", "supplementary_extractor", "modifier"]
@@ -39,6 +41,21 @@ class ComprehensiveCheckResult(BaseModel):
     Extractor with the missing areas.
     """
 
+    # OpenAI strict structured output requires additionalProperties=false in the
+    # generated JSON schema.
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "required": [
+                "is_comprehensive",
+                "missing_keywords",
+                "missing_sentence_ids",
+                "confidence",
+                "reason",
+            ]
+        },
+    )
+
     # True means Phase 1 can end and hand the merged datapoints to Phase 2.
     is_comprehensive: bool = False
 
@@ -56,6 +73,8 @@ class ComprehensiveCheckResult(BaseModel):
 
 class ValidationIssue(BaseModel):
     """One issue found by the Phase 2 Validator."""
+
+    model_config = ConfigDict(extra="forbid")
 
     # Stable id so the modifier can reference and fix a specific issue.
     issue_id: str
@@ -82,6 +101,8 @@ class ValidationResult(BaseModel):
     validation again until either valid or max iterations are reached.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     # True means Phase 2 can finish and the datapoints are ready for matching.
     is_valid: bool = False
 
@@ -101,6 +122,8 @@ class ExtractorState(BaseModel):
     Phase 2 validates and modifies that keyword set until it is ready for the
     downstream matcher.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     # Core document context (shared across phases)
 
