@@ -12,6 +12,7 @@ from botocore.exceptions import ClientError
 from utils.hash import calculate_hash
 from utils.s3_cloudfront import get_cached_data, store_in_s3, json_dumps_decimal
 from utils.decimal import convert_floats_to_decimal
+from matcher.skill_matcher import match_resume_to_jd
 from nodes.keyword_extractor_graph import run_keywords_extractor
 
 # Initialize AWS clients
@@ -23,10 +24,25 @@ dynamodb = boto3.resource("dynamodb")
 # cache bucket/CloudFront settings are read by utils.s3_cloudfront.
 JOBS_TABLE_NAME = os.environ["JOBS_TABLE_NAME"]
 
-# Matching threshold is reserved for the future matcher phase. The current
-# worker now extracts validated JD/resume skills but does not yet compute final
-# skill-overlap metrics.
+# Minimum deterministic skill-name similarity required for a JD skill and resume
+# skill to count as a match.
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.5").strip())
+
+# Use embedding similarity as an additional semantic signal for matcher pairs.
+# This handles open-ended synonyms without growing an endless alias list.
+MATCH_USE_EMBEDDINGS = os.getenv("MATCH_USE_EMBEDDINGS", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+)
+try:
+    MATCH_EMBEDDING_THRESHOLD = float(
+        os.getenv("MATCH_EMBEDDING_THRESHOLD", "0.72").strip()
+    )
+except ValueError:
+    MATCH_EMBEDDING_THRESHOLD = 0.72
 
 # DynamoDB table
 # Table shared with the quick Lambda. The quick Lambda creates jobs; the worker
@@ -138,8 +154,7 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
     # 1. Normalize resume/JD input.
     # 2. Check S3/CloudFront cache by deterministic payload hash.
     # 3. Run the local Keywords Extractor for both JD and resume.
-    # 4. Store extracted sentences/skills and mark the job as SUCCEEDED.
-    # The final matcher score computation is still left for a later homework.
+    # 4. Run the local matcher and store extraction/matching results.
     print(f"Processing job {job_id} with payload: {payload}")
 
     # Normalize payload
@@ -197,21 +212,34 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
     print(f"Running Keywords Extractor for Resume...")
     resume_extractor_state = run_keywords_extractor(resume_text)
 
-    # TODO: Implement Matcher
-    # TODO: Implement matcher using the extracted JD and resume skills. A future
-    # matcher would likely compute skill-level matches plus precision/recall/F1.
+    # Run the local matcher using extracted skills. The matcher is deterministic
+    # and computes precision, recall, F1, requirement coverage, missing JD
+    # skills, and extra resume skills without another LLM call.
+    # It consumes only ExtractorState.datapoints so the matcher stays decoupled
+    # from sentence preprocessing and LLM extraction internals.
+    matcher_result = match_resume_to_jd(
+        jd_extractor_state.datapoints,
+        resume_extractor_state.datapoints,
+        threshold=MATCH_THRESHOLD,
+        use_embeddings=MATCH_USE_EMBEDDINGS,
+        embedding_threshold=MATCH_EMBEDDING_THRESHOLD,
+    )
 
-
-    # TODO: Output matching results
-    # Current output exposes validated extraction results and leaves matching
-    # empty until the skill-overlap scorer is implemented.
+    # Output matching results
+    # Include both full extractor states and a flattened matching summary so
+    # notebooks/API callers can inspect the evidence behind the final metrics.
     processed_result = {
         "cache_key": cache_key,
         "source": "processor",
         "input_data": normalized_payload,
         "extractions": {
+            # Full extractor states are included for debugging and traceability.
+            # They contain sentences, extraction history, checker results, and
+            # validator results for each document.
             "jd": jd_extractor_state.model_dump(mode="json"),
             "resume": resume_extractor_state.model_dump(mode="json"),
+            # Flattened skill lists are duplicated here for consumers that only
+            # need extracted skills and do not want to parse the full states.
             "jd_skills": [
                 _skill_to_dict(skill) for skill in jd_extractor_state.datapoints.skills
             ],
@@ -220,8 +248,9 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
                 for skill in resume_extractor_state.datapoints.skills
             ],
         },
-        "matching": {
-        },
+        # MatcherResult is already JSON-safe because it is a Pydantic model with
+        # enum fields serialized through mode="json".
+        "matching": matcher_result.model_dump(mode="json"),
         "processed_at": datetime.now(timezone.utc).isoformat(),
     }
 
