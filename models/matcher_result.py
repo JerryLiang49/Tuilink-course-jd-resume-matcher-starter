@@ -21,9 +21,10 @@ class MatchedSkill(BaseModel):
     # Importance comes from the JD side because it describes the requirement.
     jd_importance: ImportanceEnum
 
-    # Similarity is the deterministic name similarity score used for matching.
+    # Similarity is the final score used for matching. It may come from exact,
+    # alias, fuzzy string, or embedding similarity depending on match_type.
     similarity: float
-    match_type: Literal["exact", "alias", "fuzzy"]
+    match_type: Literal["exact", "alias", "fuzzy", "embedding"]
 
     # Skill-level experience/proficiency comparison fields.
     jd_yoe: Optional[float] = None
@@ -73,6 +74,36 @@ class ExtraResumeSkill(BaseModel):
     referenced_sentence_ids: List[str]
 
 
+class DirectionalMatchResult(BaseModel):
+    """One directional matching pass between source and target skill sets.
+
+    The design doc calls for two passes:
+    ``jd_to_resume`` computes recall by asking how well resume skills cover JD
+    requirements, while ``resume_to_jd`` computes precision by asking how much
+    of the resume is relevant to the JD. Each score follows the BERTScore-style
+    formula from the design: for every source keyword, take the best target
+    keyword similarity, then average those best scores.
+    """
+
+    # Direction of this pass. The source side is matched greedily into the
+    # target side.
+    direction: Literal["jd_to_resume", "resume_to_jd"]
+
+    # Raw counts for this directional pass.
+    source_skill_count: int
+    target_skill_count: int
+    matched_skill_count: int
+
+    # Weighted average of max keyword-pair scores for this direction. The
+    # current implementation uses uniform weights, matching the design doc's
+    # "start with evenly weighted keywords" note.
+    score: float
+
+    # Matched evidence for this pass. Names are still stored as JD/resume
+    # because the UI needs to show both documents consistently.
+    matched_skills: List[MatchedSkill]
+
+
 class MatcherResult(BaseModel):
     """Final local matcher output.
 
@@ -91,6 +122,7 @@ class MatcherResult(BaseModel):
     resume_skill_count: int
     matched_skill_count: int
 
+    # Backward-compatible aliases for the jd_to_resume directional result:
     # precision = matched resume skills / all resume skills
     # recall = matched JD skills / all JD skills
     # f1 = harmonic mean of precision and recall
@@ -105,7 +137,19 @@ class MatcherResult(BaseModel):
     # Among matched skills, the share where resume YOE satisfies explicit JD YOE.
     yoe_satisfaction_rate: float
 
-    # Overall score intentionally uses F1 so it remains easy to explain.
+    # Explicit directional summaries required by the matcher design.
+    jd_to_resume: DirectionalMatchResult
+    resume_to_jd: DirectionalMatchResult
+
+    # Alias for the final F1 score over directional precision and recall.
+    bidirectional_score: float
+
+    # Whether embedding similarity was requested and remained available.
+    embedding_enabled: bool = False
+    embedding_threshold: Optional[float] = None
+
+    # Overall score intentionally uses bidirectional F1 so it reflects both
+    # requirement coverage and resume relevance.
     overall_score: float
 
     # Detailed evidence for how the aggregate metrics were produced.

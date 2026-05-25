@@ -28,6 +28,22 @@ JOBS_TABLE_NAME = os.environ["JOBS_TABLE_NAME"]
 # skill to count as a match.
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "0.5").strip())
 
+# Use embedding similarity as an additional semantic signal for matcher pairs.
+# This handles open-ended synonyms without growing an endless alias list.
+MATCH_USE_EMBEDDINGS = os.getenv("MATCH_USE_EMBEDDINGS", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+)
+try:
+    MATCH_EMBEDDING_THRESHOLD = float(
+        os.getenv("MATCH_EMBEDDING_THRESHOLD", "0.72").strip()
+    )
+except ValueError:
+    MATCH_EMBEDDING_THRESHOLD = 0.72
+
 # DynamoDB table
 # Table shared with the quick Lambda. The quick Lambda creates jobs; the worker
 # updates the same items as PROCESSING, SUCCEEDED, or FAILED.
@@ -205,6 +221,8 @@ def process_job(job_id: str, payload: Any) -> Dict[str, Any]:
         jd_extractor_state.datapoints,
         resume_extractor_state.datapoints,
         threshold=MATCH_THRESHOLD,
+        use_embeddings=MATCH_USE_EMBEDDINGS,
+        embedding_threshold=MATCH_EMBEDDING_THRESHOLD,
     )
 
     # Output matching results

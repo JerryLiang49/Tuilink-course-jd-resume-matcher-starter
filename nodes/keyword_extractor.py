@@ -27,28 +27,8 @@ from models.extractor_state import (
     ValidationIssue,
     ValidationResult,
 )
+from utils.json import parse_response_json
 from utils.llm import LLM_USE_CACHE, invoke_llm
-
-
-def _response_json(response) -> dict:
-    """Parse JSON from LangChain/OpenAI responses across content formats."""
-
-    content = response.content
-    if isinstance(content, str):
-        raw_text = content
-    elif isinstance(content, list):
-        # ChatOpenAI can return Responses API blocks like {"type": "text",
-        # "text": "..."}; keep the parser tolerant for notebook/runtime drift.
-        text_blocks = [
-            block.get("text", "")
-            for block in content
-            if isinstance(block, dict) and block.get("text")
-        ]
-        raw_text = "\n".join(text_blocks)
-    else:
-        raw_text = str(content)
-
-    return json.loads(raw_text)
 
 
 def _sentences_as_prompt(state: ExtractorState) -> str:
@@ -234,7 +214,7 @@ def keywords_extractor(state: ExtractorState) -> ExtractorState:
         use_cache=LLM_USE_CACHE,
     )
 
-    datapoints = DataPoints.model_validate(_response_json(response))
+    datapoints = DataPoints.model_validate(parse_response_json(response))
     state.record_extraction_pass(
         "keywords_extractor",
         datapoints,
@@ -294,7 +274,7 @@ def comprehensive_checker(state: ExtractorState) -> ExtractorState:
         use_cache=LLM_USE_CACHE,
     )
 
-    result = ComprehensiveCheckResult.model_validate(_response_json(response))
+    result = ComprehensiveCheckResult.model_validate(parse_response_json(response))
 
     valid_ids = _valid_sentence_ids(state)
     result.missing_sentence_ids = [
@@ -375,7 +355,7 @@ def supplementary_extractor(state: ExtractorState) -> ExtractorState:
         use_cache=LLM_USE_CACHE,
     )
 
-    datapoints = DataPoints.model_validate(_response_json(response))
+    datapoints = DataPoints.model_validate(parse_response_json(response))
     state.record_extraction_pass(
         "supplementary_extractor",
         datapoints,
